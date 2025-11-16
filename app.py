@@ -1,12 +1,12 @@
-# Flask App D'Franco - v2 (Interfaz web + Inventario automático)
-# Esta app genera catálogos PDF sin límite de fotos, códigos en secuencia
-# y portadas personalizadas con logo y título.
+# Flask App D'Franco - v3 (Interfaz Web + Inventario + Catálogo 3x3)
+# Compatible con Render
 
 from flask import Flask, request, jsonify, send_file
 import os
 from PIL import Image
 from fpdf import FPDF
 import datetime
+import pandas as pd
 
 app = Flask(__name__)
 
@@ -28,7 +28,7 @@ def generar_codigos(base_nombre, cantidad):
     return codigos
 
 # ------------------------------------------
-# FUNCIÓN: Crear PDF catálogo
+# FUNCIÓN: Crear PDF catálogo (3x3)
 # ------------------------------------------
 def crear_catalogo(titulo, fotos, codigos):
     pdf = FPDF('P', 'mm', 'A4')
@@ -42,11 +42,12 @@ def crear_catalogo(titulo, fotos, codigos):
 
     if os.path.exists(LOGO_PATH):
         pdf.image(LOGO_PATH, x=60, y=40, w=90)
+
     pdf.ln(120)
     pdf.set_font('Arial', '', 12)
     pdf.cell(0, 10, datetime.datetime.now().strftime("%d/%m/%Y"), ln=True, align='C')
 
-    # GRID 3x3
+    # ------------ GRID 3X3 -------------
     cell_w = 63
     cell_h = 85
     img_w = 60
@@ -56,14 +57,14 @@ def crear_catalogo(titulo, fotos, codigos):
 
     for img_path, codigo in zip(fotos, codigos):
 
-        # Nueva página solo cuando volvemos al inicio de 3x3
+        # Nueva página solo cuando se inicia una nueva hoja de 3x3
         if row == 0 and col == 0:
             pdf.add_page()
 
         x = 10 + col * cell_w
         y = 20 + row * cell_h
 
-        # Insertar imagen respetando proporciones
+        # Insertar imagen sin distorsión ni compresión excesiva
         try:
             pdf.image(img_path, x=x+1, y=y, w=img_w)
         except:
@@ -72,7 +73,11 @@ def crear_catalogo(titulo, fotos, codigos):
 
         # Código centrado
         pdf.set_font('Arial', 'B', 10)
-        pdf.text(x + cell_w/2 - (pdf.get_string_width(codigo)/2), y + img_h + 8, codigo)
+        pdf.text(
+            x + cell_w/2 - (pdf.get_string_width(codigo)/2),
+            y + img_h + 8,
+            codigo
+        )
 
         # Avanzar columnas y filas
         col += 1
@@ -82,6 +87,7 @@ def crear_catalogo(titulo, fotos, codigos):
             if row == 3:
                 row = 0
 
+    # Guardar PDF final
     nombre_archivo = f"{titulo.replace(' ', '_')}.pdf"
     ruta = os.path.join(OUTPUT_FOLDER, nombre_archivo)
     pdf.output(ruta)
@@ -90,6 +96,7 @@ def crear_catalogo(titulo, fotos, codigos):
 
 # ------------------------------------------
 # INTERFAZ WEB
+# ------------------------------------------
 @app.route('/')
 def index():
     return """
@@ -98,7 +105,8 @@ def index():
         <title>D'Franco App</title>
         <style>
             body { font-family: Arial; background: #f0f0f0; padding: 30px; }
-            .card { background: white; padding: 25px; width: 450px; margin:auto; border-radius: 15px; box-shadow:0 0 20px #0002; }
+            .card { background: white; padding: 25px; width: 450px; margin:auto;
+                    border-radius: 15px; box-shadow:0 0 20px #0002; }
             input, button { width:100%; padding:10px; margin-top:10px; }
             button { background:black; color:white; cursor:pointer; }
         </style>
@@ -125,7 +133,9 @@ def index():
     </html>
     """
 
+# ------------------------------------------
 # ENDPOINT: Generar catálogo PDF
+# ------------------------------------------
 @app.route('/generar', methods=['POST'])
 def generar():
     titulo = request.form.get('titulo')
@@ -146,8 +156,9 @@ def generar():
 
     return send_file(pdf_path, as_attachment=True)
 
+# ------------------------------------------
 # ENDPOINT: Inventario automático (Excel)
-import pandas as pd
+# ------------------------------------------
 @app.route('/inventario', methods=['POST'])
 def inventario():
     base = request.form.get('base')
@@ -173,8 +184,11 @@ def inventario():
     excel_path = os.path.join(OUTPUT_FOLDER, f"Inventario_{base}.xlsx")
     df.to_excel(excel_path, index=False)
 
-    return send_file(excel_path, as_attachment=True)(pdf_path, as_attachment=True)
+    return send_file(excel_path, as_attachment=True)
 
-
+# ------------------------------------------
+# SERVIDOR COMPATIBLE CON RENDER
+# ------------------------------------------
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port, debug=True)
